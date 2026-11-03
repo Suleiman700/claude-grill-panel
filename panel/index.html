@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Grill Panel</title>
+	<link rel="stylesheet" href="style.css">
+</head>
+<body>
+	<header class="top">
+		<button id="menu" class="icon-btn" aria-label="Sessions">☰</button>
+		<div class="title-wrap">
+			<h1 id="title">Grill Panel</h1>
+			<p id="topic" class="muted"></p>
+		</div>
+		<div class="top-actions">
+			<span id="conn" class="conn" title="Connection to the local server">connecting…</span>
+			<button id="copy" class="btn">Copy answers</button>
+			<button id="send" class="btn primary">Send answers</button>
+		</div>
+	</header>
+
+	<div class="layout">
+		<aside id="sidebar" class="sidebar">
+			<h2>Sessions</h2>
+			<ul id="sessions" class="sessions"></ul>
+		</aside>
+
+		<main class="main">
+			<div class="toolbar">
+				<input id="search" type="search" placeholder="Search questions…" aria-label="Search questions">
+				<div id="filters" class="filters" role="tablist"></div>
+			</div>
+			<section id="summary" class="summary" hidden></section>
+			<div id="content"></div>
+			<p id="empty" class="empty" hidden>No questions here.</p>
+		</main>
+	</div>
+
+	<div id="toast" class="toast" hidden></div>
+
+	<script src="app.js"></script>
+</body>
+</html>
