@@ -3,6 +3,8 @@
 A Claude Code skill: a "grilling" interview (Claude maps your plan as a tree of decisions and asks the open
 ones round by round) with a **local HTML panel** to answer in, and every session saved to disk.
 
+- At the start of a session it asks how you want to answer: **panel** (HTML), **chat** (text only, no server)
+  or **both**. The choice is remembered per session.
 - Questions, options, recommendations, follow-ups and decisions are stored per project in
   `docs/grill-panel/sessions/`.
 - The panel saves answers as you type, so a refresh never loses anything. If the server is down, answers wait in

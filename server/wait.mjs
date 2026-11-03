@@ -34,7 +34,9 @@ function read() {
 	}
 }
 
-const since = String(read()._round?.at || "");
+// The newest answer time at start: everything up to it was already seen.
+// (Not just `_round.at`: answers sent in the same request can be a millisecond later.)
+const since = Object.values(read()).reduce((m, a) => (a && String(a.at) > m ? String(a.at) : m), "");
 const started = Date.now();
 console.log(`waiting for answers to "${id}" (sent after ${since || "start"})`);
 

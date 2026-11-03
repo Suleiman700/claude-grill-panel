@@ -19,6 +19,7 @@ Session ids: letters, digits, `.`, `_`, `-`, starting with a letter or digit, e.
 	"id": "2026-11-03-game-plan",
 	"title": "Game plan: co-op and sandbox",
 	"topic": "One or two sentences: what is being decided.",
+	"mode": "both",
 	"status": "open",
 	"created": "2026-11-03T10:00:00Z",
 	"updated": "2026-11-03T12:30:00Z",
@@ -67,6 +68,9 @@ Session ids: letters, digits, `.`, `_`, `-`, starting with a letter or digit, e.
 | `followups` | Ids of questions that came out of this one. |
 | `parent` | For a follow-up: the question it came from. |
 | `notes` | Optional extra context or facts. |
+
+Session `mode`: how the user answers. `panel` (the HTML panel; chat shows only titles and the link), `chat`
+(chat only, no server), or `both`. Asked once when a session starts.
 
 Session `status`: `open` or `done` (the frontier is empty and the user confirmed the shared understanding).
 

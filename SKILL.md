@@ -23,9 +23,21 @@ Finding _facts_ is your job, never the user's. When a frontier question needs a 
 - Answers: `<data>/sessions/<id>.answers.json`, written only by the panel's server. **Never write this file.** Read it to see what the user answered.
 - Session ids look like `2026-11-03-game-plan` (date + short slug).
 
-### 1. Start the server
+### 0. Ask how the user wants to answer
 
-Run in the background (it keeps running across turns; it reuses an already-running server for the same folder):
+Before the first round of a new session, ask the user (with the AskUserQuestion tool if available, otherwise in chat) which way they want to answer:
+
+| Mode | Questions shown | Answers come from | Server + waiter |
+|---|---|---|---|
+| `panel` | The HTML panel. In chat: only the round's question ids and titles, plus the link. | The panel (**Send answers**). | Yes |
+| `chat` | Chat, in the full round format below. | Chat. | No |
+| `both` (recommended) | Chat in full **and** the panel. | Either one. | Yes |
+
+Store the choice as `"mode"` in the session file. When resuming a session that has a `mode`, use it without asking again; switch only if the user asks. Session files are saved in every mode, so a `chat` session can be opened in the panel later.
+
+### 1. Start the server (`panel` and `both` only)
+
+Skip this in `chat` mode. Run in the background (it keeps running across turns; it reuses an already-running server for the same folder):
 
 ```
 node "<skill dir>/server/server.mjs" --dir "<data>"
@@ -35,12 +47,15 @@ Its first output line has the URL (`http://localhost:4777/` by default; it tries
 
 ### 2. Pick or create the session
 
-List `<data>/sessions/*.json`. If one is about the same topic and still `open`, resume it: read it and its answers file fully, and continue from its frontier. Otherwise create a new one with `title`, `topic`, `status: "open"`, `created`, `updated`, `round: 0`, `questions: []`.
+List `<data>/sessions/*.json`. If one is about the same topic and still `open`, resume it: read it and its answers file fully, and continue from its frontier. Otherwise create a new one with `title`, `topic`, `mode`, `status: "open"`, `created`, `updated`, `round: 0`, `questions: []`. (A new session's mode comes from step 0, so pick the session first when it's unclear whether one exists.)
 
 ### 3. Each round
 
 1. Write the round into the session file: each frontier question with `status: "waiting"`, `round`, `title`, `body`, `options` (if multiple choice), `recommended`, `recommended_text`, `depends_on`, `group`. Add or update `not_asked` questions for the branches you can already see. Bump `round` and `updated`.
-2. Post the round in chat in this format, ending with the panel link `http://localhost:<port>/?session=<id>`:
+2. Post the round in chat, by mode:
+   - `panel`: one line per question (`**Q3** - title`) and the panel link `http://localhost:<port>/?session=<id>`.
+   - `chat`: the full round in the format below, no link.
+   - `both`: the full round in the format below, ending with the panel link.
 
 ```
 ❓ **Q1** - **<question title>**: <question body, might be multiple paragraphs, including multiple choices>
@@ -54,7 +69,7 @@ List `<data>/sessions/*.json`. If one is about the same topic and still `open`, 
 ➡️ <your recommended answer>
 ```
 
-3. Start the waiter in the background, unless one is already running for this session:
+3. `panel` and `both` only: start the waiter in the background, unless one is already running for this session:
 
 ```
 node "<skill dir>/server/wait.mjs" --dir "<data>" --session <id>
