@@ -52,6 +52,7 @@ List `<data>/sessions/*.json`. If one is about the same topic and still `open`, 
 ### 3. Each round
 
 1. Write the round into the session file: each frontier question with `status: "waiting"`, `round`, `title`, `body`, `options` (if multiple choice), `recommended`, `recommended_text`, `depends_on`, `group`. Add or update `not_asked` questions for the branches you can already see. Bump `round` and `updated`.
+   When a question relates to another one, name it by id in `body`, `notes`, `recommended_text` or `decision` ("follows up on Q1", "only matters if Q4 is yes"), and also set `parent` / `depends_on`. The panel turns every id that exists in the session into a link that opens that question in a side panel, where the user can read it in full, change a decided answer, or ask you about it.
 2. Post the round in chat, by mode:
    - `panel`: one line per question (`**Q3** - title`) and the panel link `http://localhost:<port>/?session=<id>`.
    - `chat`: the full round in the format below, no link.
@@ -75,7 +76,7 @@ List `<data>/sessions/*.json`. If one is about the same topic and still `open`, 
 node "<skill dir>/server/wait.mjs" --dir "<data>" --session <id>
 ```
 
-It exits when the user presses **Send answers** in the panel and prints what they sent, which wakes you up. Then end your turn.
+It exits when the user presses **Send answers** (or **Send to Claude** in the side panel) and prints what they sent, which wakes you up. Then end your turn. While you wait for the user to confirm the final summary (step 5), keep a waiter running too, so a late change from the side panel still reaches you.
 
 ### 4. Processing answers
 
@@ -86,8 +87,8 @@ Answers arrive from the panel (the waiter exits with `ANSWERS SENT`) or in chat.
 | `choice: "yes"` | `status: "decided"`, `decision` = the recommendation (plus any condition in `text`). |
 | an option id | `decided`, `decision` = that option's label (plus `text`). |
 | `"no"` / `"other"` with clear text | `decided` with the user's answer as the decision. |
-| unclear, or `text` asks a question | Keep it `waiting`, or add a follow-up question (`id` like `Q3a`, `parent: "Q3"`, list it in the parent's `followups`) for the next round. Answer their question in chat. |
-| `"change"` on a decided question | Re-open: back to `waiting` with a follow-up describing what changes. |
+| unclear, or `text` asks a question | Keep it `waiting`, or add a follow-up question (`id` like `Q3a`, `parent: "Q3"`, list it in the parent's `followups`) for the next round. Answer their question in chat **and** append `{ "q": <their question>, "a": <your answer, markdown>, "at": <now> }` to the question's `qa`, so the panel shows the reply with the question. |
+| an answer on a `decided` / `deferred` question, newer than its `decided_at` | Sent from the panel's side panel. A different option (or `"other"` / `"no"` with text, or `"change"`) is a **change**: if it's clear, make it the new `decision` with a new `decided_at` and keep the old decision in `notes`; if not, re-open it (`waiting`) with a follow-up. Either way, check every question that `depends_on` it or is in its `followups`: re-open the ones whose decision no longer holds, and say so in chat. The same choice with only a question in `text` is not a change: answer it as above and leave the decision alone. |
 | `"early"` on a `not_asked` question | Treat as an answer once its prerequisites allow; otherwise keep it as a note. |
 | `_round` text | New ideas or concerns: add them as new questions (now or `not_asked`). |
 | "decide later" | `status: "deferred"`, `decision` says when or what triggers it. |

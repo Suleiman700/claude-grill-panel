@@ -12,6 +12,7 @@
 	--deferred: #7a5cc2;
 	--dropped: #8a8f99;
 	--not-asked: #5e6778;
+	--missing: #c62828;
 	--rec-bg: #eef4ff;
 	--chip-bg: #eceff4;
 	--shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 2px 8px rgba(0, 0, 0, 0.04);
@@ -33,6 +34,7 @@
 		--deferred: #a98bf0;
 		--dropped: #7d8494;
 		--not-asked: #9aa3b5;
+		--missing: #f26d6d;
 		--rec-bg: #1d2a42;
 		--chip-bg: #252c39;
 		--shadow: none;
@@ -133,12 +135,41 @@ code { font: 0.9em ui-monospace, Consolas, monospace; background: var(--chip-bg)
 .card.followup { margin-left: 28px; }
 
 .card-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.qid { font: 600 12px ui-monospace, Consolas, monospace; padding: 2px 8px; border-radius: 6px; background: var(--chip-bg); }
+.qid { font: 600 12px ui-monospace, Consolas, monospace; padding: 2px 8px; border-radius: 6px; background: var(--chip-bg); color: var(--ink); border: 1px solid transparent; }
+button.qid { cursor: pointer; }
+button.qid:hover { border-color: var(--accent); }
+/* A question id mentioned in text: opens that question in the side panel. */
+.qref {
+	font: 600 0.85em ui-monospace, Consolas, monospace; padding: 0 5px; border-radius: 4px;
+	border: 1px solid transparent; background: var(--rec-bg); color: var(--accent); cursor: pointer;
+}
+.qref:hover { border-color: var(--accent); }
 .card-head h3 { font-size: 15px; flex: 1; min-width: 200px; }
 .badge { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--chip-bg); color: var(--muted); white-space: nowrap; }
-.badge.draft { color: var(--waiting); }
-.badge.sent { color: var(--answered); }
 .badge.ready { color: var(--decided); }
+
+/* Answer-state marks: the icon carries the meaning, the colour only backs it up. */
+.mark {
+	display: inline-flex; align-items: center; gap: 5px; white-space: nowrap;
+	font-size: 12px; padding: 2px 9px 2px 3px; border-radius: 999px; background: var(--chip-bg); color: var(--muted);
+}
+.mark-icon {
+	display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%;
+	font: 700 11px/1 system-ui, sans-serif; color: var(--panel); background: var(--not-asked);
+}
+.m-done { color: var(--decided); }
+.m-done .mark-icon { background: var(--decided); }
+.m-draft { color: var(--waiting); }
+.m-draft .mark-icon { background: var(--waiting); }
+.m-missing { color: var(--missing); }
+.m-missing .mark-icon { background: var(--missing); }
+.m-open .mark-icon { background: transparent; color: var(--muted); }
+.m-muted .mark-icon { background: transparent; color: var(--muted); }
+.legend { display: flex; gap: 8px; flex-wrap: wrap; margin: -6px 0 16px; }
+.need { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--missing); margin-top: -2px; }
+.need .mark-icon { background: var(--missing); }
+.need[hidden] { display: none; }
+textarea.required { border-color: var(--missing); border-width: 2px; }
 
 .body { margin-top: 8px; }
 .body p { margin: 0 0 8px; }
@@ -173,6 +204,37 @@ textarea {
 	border: 1px solid var(--line); background: var(--bg); color: var(--ink);
 }
 .saved { font-size: 12px; color: var(--muted); min-height: 16px; }
+
+.card-actions { margin-top: 10px; }
+.btn.small { font-size: 13px; padding: 4px 12px; }
+
+/* --- side panel --- */
+.drawer {
+	position: fixed; right: 0; bottom: 0; z-index: 6;
+	width: min(460px, 100vw); overflow-y: auto;
+	padding: 0 18px 20px; background: var(--panel); border-left: 1px solid var(--line);
+	box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
+}
+.drawer-head {
+	position: sticky; top: 0; z-index: 1;
+	display: flex; align-items: center; gap: 8px; padding: 14px 0 10px; background: var(--panel);
+}
+.drawer-head [data-act="close"] { margin-left: auto; }
+.x-btn { font-size: 18px; line-height: 1; padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); cursor: pointer; }
+.x-btn:hover { border-color: var(--accent); }
+.drawer .group-title { margin: 4px 0; }
+.drawer-title { font-size: 17px; }
+.drawer h4 { font-size: 14px; margin: 18px 0 8px; }
+.drawer .hint { font-size: 13px; color: var(--muted); margin: -4px 0 8px; }
+.drawer .answer { margin-top: 0; }
+.drawer-foot { margin-top: 12px; display: flex; gap: 8px; justify-content: flex-end; }
+.qa { border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; font-size: 14px; }
+.qa.pending { border-style: dashed; }
+.qa .body { margin-top: 4px; }
+/* Wide screens: the page makes room instead of being covered. */
+@media (min-width: 1200px) {
+	body.drawer-open .layout { margin-right: 460px; }
+}
 
 .round-note { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; }
 .round-note h3 { font-size: 14px; margin-bottom: 8px; }

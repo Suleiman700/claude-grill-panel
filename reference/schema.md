@@ -44,7 +44,10 @@ Session ids: letters, digits, `.`, `_`, `-`, starting with a letter or digit, e.
 			"decided_at": null,
 			"followups": ["Q1a"],
 			"parent": null,
-			"notes": "Optional: facts Claude found, in markdown."
+			"notes": "Optional: facts Claude found, in markdown.",
+			"qa": [
+				{ "q": "Does EOS work offline?", "a": "No: it needs a login, so LAN play stays on Q4.", "at": "2026-11-03T12:40:00Z" }
+			]
 		}
 	]
 }
@@ -68,6 +71,10 @@ Session ids: letters, digits, `.`, `_`, `-`, starting with a letter or digit, e.
 | `followups` | Ids of questions that came out of this one. |
 | `parent` | For a follow-up: the question it came from. |
 | `notes` | Optional extra context or facts. |
+| `qa` | Questions the user asked Claude about this question (in the answer `text`) and Claude's answers: `q`, `a` (markdown), `at`. The panel shows them in the side panel. |
+
+Ids mentioned in `title`, `body`, `notes`, `recommended_text`, `decision`, option descriptions, `qa` and the
+session `summary` (e.g. "follows up on Q1") are shown as links that open that question in the panel's side panel.
 
 Session `mode`: how the user answers. `panel` (the HTML panel; chat shows only titles and the link), `chat`
 (chat only, no server), or `both`. Asked once when a session starts.
@@ -90,8 +97,12 @@ Written by the server when the user answers in the panel. Keyed by question id:
 |---|---|
 | `choice` | An option `id`, `"yes"` (accept the recommendation), `"no"`, `"other"` (see text), or `null`. |
 | `text` | Free text: a custom answer, a condition, or a follow-up question for Claude. |
-| `submitted` | `false` = draft (saved, but the user is still editing); `true` = the user pressed **Send answers**. |
+| `submitted` | `false` = saved but not sent (the panel lists it under **Not sent**); `true` = the user pressed **Send answers** or **Send to Claude**. |
 | `_round` | A comment on the whole round, plus the time the round was sent. |
 
 Claude only acts on `submitted: true` answers. After processing one, Claude updates the question in
 `<id>.json` (status `decided` / `deferred` / follow-ups added). The answer entry stays as a record.
+
+On a `decided` or `deferred` question, an answer newer than the question's `decided_at` came from the side panel: a
+**change** if the choice differs from the decision, otherwise a question in `text`. Older entries are just the record of the answer that decided it, so
+always set `decided_at` when deciding.

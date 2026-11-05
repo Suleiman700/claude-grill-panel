@@ -18,6 +18,12 @@ The skill itself is called `grill-panel`, so you run it as `/grill-panel`.
   answers wait in the browser and sync when it's back.
 - **No copy-pasting.** **Send answers** in the panel wakes Claude up straight away (a small waiter process
   exits). **Copy answers** is there too, if you'd rather paste into chat.
+- **Linked questions.** Question ids in any text ("follows up on Q1") are links. Click one to open that question
+  in a side panel: read it in full, see what depends on it, change an answer you already gave, or ask Claude about
+  it. Claude's replies are kept with the question.
+- **Save now, send later.** Answers you save but haven't sent are listed under **Not sent**, and every question
+  shows where it stands with an icon and a word (✓ answered, ✎ saved, not sent, ! needs text, ○ not answered),
+  so nothing relies on colour alone.
 - **Live updates.** When Claude adds a round, the open panel updates by itself.
 - **Resumable sessions.** Several sessions per project, each stored in `docs/grill-panel/sessions/`. Pick any
   of them up days later.

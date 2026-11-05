@@ -15,15 +15,32 @@ const state = {
 	filter: "open",
 	search: "",
 	live: false,
+	drawer: [], // question ids opened in the side panel; the last one is shown
 };
 
 const FILTERS = [
 	["open", "To answer", (q) => q.status === "waiting" || q.status === "answered"],
+	["unsent", "Not sent", (q) => UNSENT.has(answerState(q))],
 	["not_asked", "Not asked yet", (q) => q.status === "not_asked"],
 	["decided", "Decided", (q) => ["decided", "deferred", "dropped"].includes(q.status)],
 	["all", "All", () => true],
 ];
-const STATUS_LABEL = { waiting: "waiting", answered: "answered", decided: "decided", deferred: "deferred", dropped: "dropped", not_asked: "not asked" };
+
+// Where a question stands for the user: an icon plus a word, so the state never
+// depends on colour alone (the colour class only reinforces it).
+const MARKS = {
+	open: ["○", "not answered", "m-open"],
+	draft: ["✎", "saved, not sent", "m-draft"],
+	missing: ["!", "needs text", "m-missing"],
+	sent: ["✓", "answered", "m-done"],
+	change_sent: ["✓", "change sent", "m-done"],
+	decided: ["✓", "decided", "m-done"],
+	deferred: ["–", "deferred", "m-muted"],
+	dropped: ["✕", "dropped", "m-muted"],
+	not_asked: ["◌", "not asked", "m-muted"],
+};
+const UNSENT = new Set(["draft", "missing"]);
+const LEGEND = ["sent", "draft", "missing", "open"];
 
 // --- storage (all wrapped: private windows can throw) ---------------------------
 
@@ -89,6 +106,31 @@ function md(text) {
 	return html;
 }
 
+// Question ids in rendered text (Q1, Q1a, N2) become buttons that open that question
+// in the side panel. Only ids that exist in the session; tags and link text are left alone.
+function linkRefs(html, self) {
+	const ids = new Set(questions().map((q) => q.id));
+	let inLink = 0;
+	return html.replace(/(<[^>]*>)|([^<]+)/g, (_m, tag, text) => {
+		if (tag) {
+			if (/^<a[\s>]/i.test(tag)) inLink++;
+			else if (/^<\/a>/i.test(tag)) inLink--;
+			return tag;
+		}
+		if (inLink) return text;
+		return text.replace(/\b[A-Za-z]\d+[a-z]*\b/g, (id) => (ids.has(id) && id !== self ? refBtn(id) : id));
+	});
+}
+function refBtn(id) {
+	return `<button type="button" class="qref" data-ref="${esc(id)}" title="Open ${esc(id)}">${esc(id)}</button>`;
+}
+function rich(text, self) {
+	return linkRefs(inline(text), self);
+}
+function richMd(text, self) {
+	return linkRefs(md(text), self);
+}
+
 // --- server --------------------------------------------------------------------------
 
 async function api(path, opts) {
@@ -144,7 +186,7 @@ async function saveDrafts() {
 		const local = load(localKey, {});
 		for (const [qid, d] of dirty) if (local[qid] && local[qid].at === d.at) delete local[qid];
 		store(localKey, Object.keys(local).length ? local : undefined);
-		markSaved("Saved");
+		markSaved("Saved, not sent yet");
 	} catch {
 		const local = load(localKey, {});
 		for (const [qid, d] of dirty) local[qid] = { ...d, at: new Date().toISOString() };
@@ -215,6 +257,8 @@ function openSession(id) {
 	state.id = id;
 	state.session = null;
 	state.drafts = {};
+	state.drawer = [];
+	renderDrawer();
 	store("grill:last", id);
 	const url = new URL(location.href);
 	url.searchParams.set("session", id);
@@ -249,7 +293,7 @@ function render() {
 	$("#topic").textContent = s.topic || "";
 	const summary = $("#summary");
 	summary.hidden = !s.summary;
-	summary.innerHTML = s.summary ? `<h2>Shared understanding so far</h2><div class="body">${md(s.summary)}</div>` : "";
+	summary.innerHTML = s.summary ? `<h2>Shared understanding so far</h2><div class="body">${richMd(s.summary)}</div>` : "";
 
 	const qs = questions();
 	const filters = $("#filters");
@@ -307,6 +351,9 @@ function render() {
 	}
 
 	if (state.filter === "open" && visible.length) content.appendChild(roundNote());
+	const unsent = qs.filter((q) => UNSENT.has(answerState(q))).length;
+	$("#send").textContent = unsent ? `Send answers (${unsent})` : "Send answers";
+	renderDrawer();
 
 	if (focusKey) {
 		const el = document.querySelector(`[data-key="${CSS.escape(focusKey)}"]`);
@@ -320,25 +367,86 @@ function render() {
 function card(q, isFollowup = false) {
 	const el = document.createElement("article");
 	el.className = `card ${q.status}${isFollowup ? " followup" : ""}`;
-	const d = state.drafts[q.id];
-	let badge = `<span class="badge">${STATUS_LABEL[q.status] || esc(q.status)}</span>`;
-	if (d && (q.status === "waiting" || q.status === "answered")) badge += d.submitted ? '<span class="badge sent">sent</span>' : '<span class="badge draft">draft</span>';
+	let badge = mark(answerState(q));
 	if (q.status === "not_asked" && (q.depends_on || []).length && q.depends_on.every((id) => decidedIds().has(id))) badge += '<span class="badge ready">ready to ask</span>';
 
-	let html = `<div class="card-head"><span class="qid">${esc(q.id)}</span><h3>${inline(q.title || "")}</h3>${badge}</div>`;
-	if (q.body) html += `<div class="body">${md(q.body)}</div>`;
-	if (q.notes) html += `<div class="body muted">${md(q.notes)}</div>`;
-	if (q.options?.length && q.status !== "waiting" && q.status !== "answered") {
-		html += `<div class="body"><ul>${q.options.map((o) => `<li><strong>${esc(o.label)}</strong>${o.description ? ` – ${inline(o.description)}` : ""}${o.id === q.recommended ? " ★" : ""}</li>`).join("")}</ul></div>`;
-	}
-	if (q.recommended_text && q.status !== "decided") html += `<div class="rec">➡️ ${inline(q.recommended_text)}</div>`;
-	if (q.decision) html += `<div class="decision"><strong>${q.status === "deferred" ? "Deferred" : "Decided"}:</strong> ${inline(q.decision)}</div>`;
-	if (q.depends_on?.length) html += `<div class="deps">Depends on: ${q.depends_on.map(esc).join(", ")}</div>`;
+	let html = `<div class="card-head"><button type="button" class="qid" data-ref="${esc(q.id)}" title="Open ${esc(q.id)} in the side panel">${esc(q.id)}</button><h3>${rich(q.title || "", q.id)}</h3>${badge}</div>`;
+	html += questionDetails(q, false);
 	el.innerHTML = html;
 
 	if (q.status === "waiting" || q.status === "answered") el.appendChild(answerControls(q));
-	else if (q.status === "decided" || q.status === "deferred" || q.status === "not_asked") el.appendChild(commentBox(q));
+	else if (q.status === "not_asked") el.appendChild(commentBox(q));
+	else if (isSettled(q)) el.insertAdjacentHTML("beforeend", `<div class="card-actions"><button type="button" class="btn small" data-ref="${esc(q.id)}">Change or ask Claude</button></div>`);
 	return el;
+}
+
+// Body, notes, options, recommendation, decision and links: shared by the card and the side panel.
+function questionDetails(q, full) {
+	let html = "";
+	if (q.body) html += `<div class="body">${richMd(q.body, q.id)}</div>`;
+	if (q.notes) html += `<div class="body muted">${richMd(q.notes, q.id)}</div>`;
+	const editable = q.status === "waiting" || q.status === "answered" || (full && isSettled(q));
+	if (q.options?.length && !editable) {
+		html += `<div class="body"><ul>${q.options.map((o) => `<li><strong>${esc(o.label)}</strong>${o.description ? ` – ${rich(o.description, q.id)}` : ""}${o.id === q.recommended ? " ★" : ""}</li>`).join("")}</ul></div>`;
+	}
+	if (q.recommended_text && q.status !== "decided") html += `<div class="rec">➡️ ${rich(q.recommended_text, q.id)}</div>`;
+	if (q.decision) html += `<div class="decision"><strong>${q.status === "deferred" ? "Deferred" : "Decided"}:</strong> ${rich(q.decision, q.id)}</div>`;
+	const links = [];
+	if (q.parent) links.push(["Follow-up of", [q.parent]]);
+	if (q.depends_on?.length) links.push(["Depends on", q.depends_on]);
+	if (full) {
+		if (q.followups?.length) links.push(["Follow-ups", q.followups]);
+		const needed = questions().filter((x) => (x.depends_on || []).includes(q.id)).map((x) => x.id);
+		if (needed.length) links.push(["Needed by", needed]);
+	}
+	for (const [label, ids] of links) html += `<div class="deps">${label}: ${ids.map((id) => (questions().some((x) => x.id === id) ? refBtn(id) : esc(id))).join(" ")}</div>`;
+	return html;
+}
+
+function isSettled(q) {
+	return q.status === "decided" || q.status === "deferred";
+}
+
+// A decided question's answer entry is a change request only if it is newer than
+// the decision (older entries are the record of the answer that decided it).
+function pendingChange(q) {
+	const d = state.drafts[q.id];
+	if (!hasAnswer(d)) return null;
+	return !d.submitted || d.dirty || String(d.at) > String(q.decided_at || "") ? d : null;
+}
+
+function hasAnswer(d) {
+	return !!d && !!(d.choice || (d.text || "").trim());
+}
+
+// "Something else" means nothing without the text that says what.
+function needsText(d) {
+	return !!d && d.choice === "other" && !(d.text || "").trim();
+}
+
+function isSent(d) {
+	return d.submitted && !d.dirty;
+}
+
+// One of the MARKS keys.
+function answerState(q) {
+	const d = state.drafts[q.id];
+	if (q.status === "waiting" || q.status === "answered") {
+		if (!hasAnswer(d)) return "open";
+		return needsText(d) ? "missing" : isSent(d) ? "sent" : "draft";
+	}
+	if (isSettled(q)) {
+		const c = pendingChange(q);
+		if (!c) return q.status;
+		return needsText(c) ? "missing" : isSent(c) ? "change_sent" : "draft";
+	}
+	if (q.status === "not_asked" && hasAnswer(d) && !isSent(d)) return "draft";
+	return MARKS[q.status] ? q.status : "open";
+}
+
+function mark(key) {
+	const [icon, word, cls] = MARKS[key];
+	return `<span class="mark ${cls}"><span class="mark-icon" aria-hidden="true">${icon}</span>${word}</span>`;
 }
 
 function setDraft(qid, change) {
@@ -356,7 +464,9 @@ function setDraft(qid, change) {
 	scheduleSave();
 }
 
-function answerControls(q) {
+// `prefix` keeps the side panel's copy of the controls apart from the card's
+// (radio groups and the focus key that survives a re-render).
+function answerControls(q, prefix = "") {
 	const wrap = document.createElement("div");
 	wrap.className = "answer";
 	const d = state.drafts[q.id] || {};
@@ -367,7 +477,7 @@ function answerControls(q) {
 		for (const o of [...q.options, { id: "other", label: "Something else", description: "Explain in the box below." }]) {
 			const label = document.createElement("label");
 			label.className = "choice" + (d.choice === o.id ? " checked" : "");
-			label.innerHTML = `<input type="radio" name="c-${esc(q.id)}" value="${esc(o.id)}" ${d.choice === o.id ? "checked" : ""}><span><span class="c-label">${esc(o.label)}${o.id === q.recommended ? '<span class="star">★ recommended</span>' : ""}</span>${o.description ? `<span class="c-desc">${inline(o.description)}</span>` : ""}</span>`;
+			label.innerHTML = `<input type="radio" name="${prefix}c-${esc(q.id)}" value="${esc(o.id)}" ${d.choice === o.id ? "checked" : ""}><span><span class="c-label">${esc(o.label)}${o.id === q.recommended ? '<span class="star">★ recommended</span>' : ""}</span>${o.description ? `<span class="c-desc">${rich(o.description, q.id)}</span>` : ""}</span>`;
 			label.querySelector("input").onchange = () => {
 				setDraft(q.id, { choice: o.id });
 				render();
@@ -393,37 +503,62 @@ function answerControls(q) {
 	}
 
 	const ta = document.createElement("textarea");
-	ta.placeholder = "Conditions, your own answer, or a follow-up question for Claude (optional)";
 	ta.value = d.text || "";
-	ta.dataset.key = `t-${q.id}`;
-	ta.oninput = () => setDraft(q.id, { text: ta.value });
+	ta.dataset.key = `${prefix}t-${q.id}`;
+	const need = document.createElement("div");
+	need.className = "need";
+	need.innerHTML = '<span class="mark-icon" aria-hidden="true">!</span>Required: you picked "Something else", so write your answer here.';
+	need.id = `${prefix}need-${q.id}`;
+	const check = () => {
+		const on = needsText(state.drafts[q.id]);
+		const other = state.drafts[q.id]?.choice === "other";
+		ta.placeholder = other ? "Your answer (required for Something else)" : "Conditions, your own answer, or a follow-up question for Claude (optional)";
+		ta.required = other;
+		ta.classList.toggle("required", on);
+		ta.setAttribute("aria-invalid", String(on));
+		on ? ta.setAttribute("aria-describedby", need.id) : ta.removeAttribute("aria-describedby");
+		need.hidden = !on;
+	};
+	ta.oninput = () => {
+		const before = answerState(q);
+		setDraft(q.id, { text: ta.value });
+		// Re-render only when the question's mark changes (e.g. "needs text" -> "saved, not sent").
+		if (answerState(q) !== before) render();
+		else check();
+	};
 	wrap.appendChild(ta);
-	const saved = document.createElement("div");
-	saved.className = "saved";
-	saved.dataset.q = q.id;
-	saved.textContent = d.at ? (d.submitted ? `Sent ${time(d.at)}` : `Draft saved ${time(d.at)}`) : "";
-	wrap.appendChild(saved);
+	wrap.appendChild(need);
+	check();
+	wrap.appendChild(savedLine(q.id, d));
 	return wrap;
 }
 
-// Decided / not-asked questions: a box to ask for a change or comment.
-function commentBox(q) {
+function savedLine(qid, d) {
+	const saved = document.createElement("div");
+	saved.className = "saved";
+	saved.dataset.q = qid;
+	saved.textContent = d.at ? (isSent(d) ? `Sent ${time(d.at)}` : `Saved ${time(d.at)}, not sent yet`) : "";
+	return saved;
+}
+
+// Not-asked questions: a box to answer early or comment. (Decided ones are changed in the side panel.)
+function commentBox(q, prefix = "") {
 	const wrap = document.createElement("details");
 	wrap.className = "answer";
 	const d = state.drafts[q.id] || {};
-	wrap.open = !!d.text;
-	wrap.innerHTML = `<summary class="muted">${q.status === "not_asked" ? "Answer early or comment" : "Change this or comment"}</summary>`;
+	wrap.open = !!d.text || !!prefix;
+	wrap.innerHTML = '<summary class="muted">Answer early or comment</summary>';
 	const ta = document.createElement("textarea");
-	ta.placeholder = q.status === "not_asked" ? "Your answer or thoughts, if you already know" : "What should change?";
+	ta.placeholder = "Your answer or thoughts, if you already know";
 	ta.value = d.text || "";
-	ta.dataset.key = `t-${q.id}`;
-	ta.oninput = () => setDraft(q.id, { choice: q.status === "not_asked" ? "early" : "change", text: ta.value });
+	ta.dataset.key = `${prefix}t-${q.id}`;
+	ta.oninput = () => {
+		const before = answerState(q);
+		setDraft(q.id, { choice: "early", text: ta.value });
+		if (answerState(q) !== before) render();
+	};
 	wrap.appendChild(ta);
-	const saved = document.createElement("div");
-	saved.className = "saved";
-	saved.dataset.q = q.id;
-	saved.textContent = d.at ? (d.submitted ? `Sent ${time(d.at)}` : `Draft saved ${time(d.at)}`) : "";
-	wrap.appendChild(saved);
+	wrap.appendChild(savedLine(q.id, d));
 	return wrap;
 }
 
@@ -439,6 +574,72 @@ function roundNote() {
 	ta.oninput = () => setDraft("_round", { choice: "comment", text: ta.value });
 	box.appendChild(ta);
 	return box;
+}
+
+// --- side panel: one question in full, opened by clicking its id anywhere -------------------
+
+// From inside the side panel a click stacks (so Back returns); from the page it starts fresh.
+function openRef(id, stack) {
+	if (!questions().some((q) => q.id === id)) return;
+	state.drawer = stack ? [...state.drawer, id] : [id];
+	renderDrawer();
+}
+
+function closeDrawer() {
+	state.drawer = [];
+	renderDrawer();
+}
+
+function renderDrawer() {
+	const box = $("#drawer");
+	const q = questions().find((x) => x.id === state.drawer[state.drawer.length - 1]);
+	box.hidden = !q;
+	document.body.classList.toggle("drawer-open", !!q);
+	if (!q) {
+		delete box.dataset.q;
+		return;
+	}
+	box.style.top = `${$(".top").offsetHeight}px`;
+	const scroll = box.dataset.q === q.id ? box.scrollTop : 0;
+	box.dataset.q = q.id;
+
+	const back = state.drawer[state.drawer.length - 2];
+	let html = '<div class="drawer-head">';
+	if (back) html += `<button type="button" class="x-btn" data-act="back" title="Back to ${esc(back)}" aria-label="Back to ${esc(back)}">←</button>`;
+	html += `<span class="qid">${esc(q.id)}</span>${mark(answerState(q))}`;
+	html += '<button type="button" class="x-btn" data-act="close" title="Close (Esc)" aria-label="Close">×</button></div>';
+	if (q.group) html += `<div class="group-title">${esc(q.group)}</div>`;
+	html += `<h3 class="drawer-title">${rich(q.title || "", q.id)}</h3>`;
+	html += questionDetails(q, true);
+
+	const qa = Array.isArray(q.qa) ? q.qa : [];
+	if (qa.length) {
+		html += "<h4>Your questions and Claude's answers</h4>";
+		for (const x of qa) html += `<div class="qa"><div class="qa-q"><strong>You:</strong> ${rich(x.q || "", q.id)}</div><div class="body">${richMd(x.a || "", q.id)}</div></div>`;
+	}
+	box.innerHTML = html;
+
+	if (q.status === "waiting" || q.status === "answered") {
+		box.insertAdjacentHTML("beforeend", "<h4>Your answer</h4>");
+		box.appendChild(answerControls(q, "d-"));
+	} else if (isSettled(q)) {
+		box.insertAdjacentHTML("beforeend", '<h4>Change the answer or ask Claude</h4><p class="hint">Pick a different option to change the decision; Claude re-opens it and checks the questions that depend on it. A question typed in the box gets an answer above.</p>');
+		box.appendChild(answerControls(q, "d-"));
+	} else if (q.status === "not_asked") {
+		box.appendChild(commentBox(q, "d-"));
+	} else {
+		box.scrollTop = scroll;
+		return; // dropped: nothing to answer
+	}
+
+	const foot = document.createElement("div");
+	foot.className = "drawer-foot";
+	foot.innerHTML = '<button type="button" class="btn">Save</button><button type="button" class="btn primary">Send to Claude</button>';
+	const [save, send] = foot.querySelectorAll("button");
+	save.onclick = saveNow;
+	send.onclick = () => sendAnswers(true);
+	box.appendChild(foot);
+	box.scrollTop = scroll;
 }
 
 function time(iso) {
@@ -460,17 +661,35 @@ function toast(text) {
 // --- send / copy -----------------------------------------------------------------------------
 
 function answeredDrafts() {
-	return Object.entries(state.drafts).filter(([qid, d]) => qid !== "_round" && (d.choice || (d.text || "").trim()));
+	const ids = new Set(questions().map((q) => q.id));
+	return Object.entries(state.drafts).filter(([qid, d]) => ids.has(qid) && hasAnswer(d));
 }
 
-async function sendAnswers() {
+// Save now instead of waiting for the typing pause. Nothing goes to Claude:
+// saved answers wait under "Not sent" until Send.
+async function saveNow() {
+	clearTimeout(saveTimer);
+	await saveDrafts();
+	render();
+	const n = questions().filter((q) => UNSENT.has(answerState(q))).length;
+	toast(state.live ? `Saved. ${n} not sent to Claude yet.` : "Saved in this browser; it syncs when the server is back");
+}
+
+// From the side panel (`quiet`), a change or a question is sent on its own,
+// without the reminder about open questions that have no answer yet.
+async function sendAnswers(quiet = false) {
 	if (!state.session) return;
-	const list = answeredDrafts().filter(([, d]) => !d.submitted || d.dirty);
+	const missing = questions().filter((q) => answerState(q) === "missing");
+	if (missing.length) {
+		openRef(missing[0].id, false);
+		return toast(`Write your answer for "Something else" first: ${missing.map((q) => q.id).join(", ")}`);
+	}
+	const list = answeredDrafts().filter(([, d]) => !isSent(d));
 	const round = state.drafts._round;
 	if (!list.length && !(round && (round.text || "").trim())) return toast("Nothing new to send");
 	const open = questions().filter((q) => q.status === "waiting").length;
 	const answeredOpen = list.filter(([qid]) => questions().find((q) => q.id === qid && q.status === "waiting")).length;
-	if (answeredOpen < open && !confirm(`${open - answeredOpen} of ${open} open questions have no answer. Send anyway?`)) return;
+	if (!quiet && answeredOpen < open && !confirm(`${open - answeredOpen} of ${open} open questions have no answer. Send anyway?`)) return;
 	const now = new Date().toISOString();
 	for (const [qid] of list) state.drafts[qid] = { ...state.drafts[qid], submitted: true, dirty: true, at: now };
 	state.drafts._round = { ...(round || {}), choice: "submit", submitted: true, dirty: true, at: now };
@@ -487,7 +706,7 @@ async function copyAnswers() {
 			const q = qs.get(qid);
 			const opt = q?.options?.find((o) => o.id === d.choice);
 			const pick = opt ? opt.label : d.choice || "";
-			return `${qid}: ${pick}${d.text ? ` - ${d.text.trim()}` : ""}`;
+			return `${qid}${q && isSettled(q) && pendingChange(q) ? " (change)" : ""}: ${pick}${d.text ? ` - ${d.text.trim()}` : ""}`;
 		});
 	if (state.drafts._round?.text) lines.push(`Comment: ${state.drafts._round.text.trim()}`);
 	const text = lines.join("\n") || "(no answers yet)";
@@ -501,7 +720,21 @@ async function copyAnswers() {
 
 // --- start ----------------------------------------------------------------------------------
 
-$("#send").onclick = sendAnswers;
+$("#send").onclick = () => sendAnswers();
+$("#legend").innerHTML = LEGEND.map(mark).join("");
+document.addEventListener("click", (e) => {
+	const act = e.target.closest("[data-act]");
+	if (act?.dataset.act === "close") return closeDrawer();
+	if (act?.dataset.act === "back") {
+		state.drawer.pop();
+		return renderDrawer();
+	}
+	const ref = e.target.closest("[data-ref]");
+	if (ref) openRef(ref.dataset.ref, !!ref.closest("#drawer"));
+});
+document.addEventListener("keydown", (e) => {
+	if (e.key === "Escape" && state.drawer.length) closeDrawer();
+});
 $("#copy").onclick = copyAnswers;
 $("#menu").onclick = () => $("#sidebar").classList.toggle("open");
 $("#search").oninput = (e) => {
