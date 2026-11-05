@@ -1,5 +1,7 @@
 # claude-grill-panel
 
+![claude-grill-panel: Claude grills your plan one round of decisions at a time, and you answer in a live local panel](assets/featured.png)
+
 A Claude Code skill for stress-testing a plan. Claude "grills" you: it maps your plan as a tree of decisions,
 asks the open ones round by round with a recommended answer for each, and keeps going until nothing is left
 silently assumed. You answer in a **local HTML panel**, in chat, or both, and every session is saved to disk so
